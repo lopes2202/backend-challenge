@@ -1,0 +1,27 @@
+﻿{
+  "compilerOptions": {
+    // Ambiente e recursos da linguagem
+    "lib": ["ES2022"],
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleDetection": "force",
+    "types": ["bun"],
+
+    // Modo bundler
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+
+    // Decorators exigidos por NestJS/TypeORM
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
+    // Rigor de tipos
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true
+  }
+}
