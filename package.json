@@ -1,6 +1,6 @@
 {
   "name": "backend-challenge",
-  "module": "index.ts",
+  "module": "src/main.ts",
   "type": "module",
   "private": true,
   "scripts": {
