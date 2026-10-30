@@ -208,7 +208,7 @@ export class SqsConsumerWorker extends IntervalWorker {
         await sqs.send(
           config.dlqUrl,
           JSON.stringify({ messageId: logicalId, error: error.name, reason: error.message, body: message.body }),
-          { groupId: 'dlq', deduplicationId: `${logicalId}:${message.messageId}` },
+          { groupId: logicalId || message.messageId || 'dlq', deduplicationId: `${logicalId}:${message.messageId}` },
         );
       } catch (dlqError) {
         // sem DLQ não dá para descartar: deixa a mensagem voltar

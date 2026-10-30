@@ -154,6 +154,11 @@ describe('Integração — Imutabilidade do Ledger, Paginação, Outbox e SQS (L
     };
     expect(sampleEnvelope.version).toBe(1);
     expect(sampleEnvelope.data).toBeDefined();
+
+    // Remove as mensagens lidas para não deixá-las in-flight bloqueando o grupo FIFO
+    for (const m of eventsFromSqs) {
+      await h.sqsClient.delete(h.queues.eventsUrl, m.receiptHandle);
+    }
   });
 
   /**
@@ -170,15 +175,17 @@ describe('Integração — Imutabilidade do Ledger, Paginação, Outbox e SQS (L
   test('SqsConsumerWorker processa mensagem da fila, deduplica redelivery via Inbox e envia poison message para DLQ', async () => {
     const { body: wallet } = await apiCreateWallet(h.baseUrl, 'player-sqs', '100.00', 'BRL');
     const consumer = h.app.get(SqsConsumerWorker);
+    const runNonce = crypto.randomUUID();
+    const logicalMessageId = `msg-sqs-bet-${runNonce}`;
 
     const sqsEvent = {
-      messageId: 'msg-sqs-bet-1',
+      messageId: logicalMessageId,
       type: 'WagerTransactionRequested',
       occurredAt: new Date().toISOString(),
       data: {
         providerId: 'provider-sqs',
-        externalTransactionId: 'sqs-tx-1',
-        idempotencyKey: 'provider-sqs:sqs-tx-1',
+        externalTransactionId: `sqs-tx-${runNonce}`,
+        idempotencyKey: `provider-sqs:sqs-tx-${runNonce}`,
         playerId: 'player-sqs',
         walletId: wallet.id,
         roundId: 'round-sqs-1',
@@ -189,9 +196,8 @@ describe('Integração — Imutabilidade do Ledger, Paginação, Outbox e SQS (L
     };
 
     // 1. Publica a mensagem no LocalStack (deduplicationId único por execução por causa da janela de 5 min do SQS FIFO)
-    const runNonce = crypto.randomUUID();
     await h.sqsClient.send(h.queues.inputUrl, JSON.stringify(sqsEvent), {
-      groupId: wallet.id,
+      groupId: `${wallet.id}-1`,
       deduplicationId: `delivery-1-${runNonce}`,
     });
     expect(await consumer.runOnce()).toBe(1);
@@ -199,13 +205,13 @@ describe('Integração — Imutabilidade do Ledger, Paginação, Outbox e SQS (L
     // Verifica que debitou 40.00 (saldo -> 60.00) e registrou na tabela inbox_messages
     const inboxRows = (await h.dataSource.query(
       `SELECT * FROM inbox_messages WHERE message_id = $1`,
-      ['msg-sqs-bet-1'],
+      [logicalMessageId],
     )) as unknown[];
     expect(inboxRows).toHaveLength(1);
 
     // 2. Simula redelivery após crash (mesmo messageId lógico entregue uma segunda vez pelo SQS)
     await h.sqsClient.send(h.queues.inputUrl, JSON.stringify(sqsEvent), {
-      groupId: wallet.id,
+      groupId: `${wallet.id}-2`,
       deduplicationId: `delivery-2-after-crash-${runNonce}`,
     });
     expect(await consumer.runOnce()).toBe(1);
@@ -217,8 +223,8 @@ describe('Integração — Imutabilidade do Ledger, Paginação, Outbox e SQS (L
     expect(recon.checkedEntries).toBe(2); // OPENING + 1 BET
 
     // 3. Envia poison message na fila principal e verifica que foi movida para a DLQ
-    await h.sqsClient.send(h.queues.inputUrl, '{json-corrompido', {
-      groupId: wallet.id,
+    await h.sqsClient.send(h.queues.inputUrl, `{json-corrompido-${runNonce}`, {
+      groupId: `${wallet.id}-poison`,
       deduplicationId: `poison-1-${runNonce}`,
     });
     expect(await consumer.runOnce()).toBe(1);
@@ -226,6 +232,11 @@ describe('Integração — Imutabilidade do Ledger, Paginação, Outbox e SQS (L
     const dlqMessages = await h.sqsClient.receive(h.queues.dlqUrl, 10, 1);
     expect(dlqMessages).toHaveLength(1);
     expect(dlqMessages[0]!.body).toContain('SyntaxError');
+
+    // Remove a mensagem da DLQ para não ficar in-flight bloqueando execuções subsequentes em menos de 30s
+    for (const m of dlqMessages) {
+      await h.sqsClient.delete(h.queues.dlqUrl, m.receiptHandle);
+    }
   });
 });
 

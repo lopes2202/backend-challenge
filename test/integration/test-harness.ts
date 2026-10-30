@@ -55,7 +55,9 @@ export async function ensureTestDatabase(): Promise<void> {
 }
 
 /**
- * Garante que as filas FIFO existam no LocalStack antes da execução dos testes de mensageria.
+ * Garante que as filas FIFO isoladas de teste existam no LocalStack antes da execução da suíte.
+ * Usa filas dedicadas (`*-test.fifo`) e `SQS_WAIT_TIME_SECONDS=1` para evitar competição
+ * caso o servidor de desenvolvimento (`bun run start`) esteja rodando em paralelo.
  */
 export async function ensureSqsQueues(rawSqs: SQSClient): Promise<{
   inputUrl: string;
@@ -75,13 +77,14 @@ export async function ensureSqsQueues(rawSqs: SQSClient): Promise<{
     return out.QueueUrl ?? `${SQS_ENDPOINT}/000000000000/${name}`;
   };
 
-  const inputUrl = await createFifo(process.env['SQS_INPUT_QUEUE'] ?? 'wager-transactions.fifo');
-  const dlqUrl = await createFifo(process.env['SQS_DLQ_QUEUE'] ?? 'wager-transactions-dlq.fifo');
-  const eventsUrl = await createFifo(process.env['SQS_EVENTS_QUEUE'] ?? 'wager-events.fifo');
+  const inputUrl = await createFifo('wager-transactions-test.fifo');
+  const dlqUrl = await createFifo('wager-transactions-dlq-test.fifo');
+  const eventsUrl = await createFifo('wager-events-test.fifo');
 
   process.env['SQS_WAGER_QUEUE_URL'] = inputUrl;
   process.env['SQS_WAGER_DLQ_URL'] = dlqUrl;
   process.env['SQS_EVENTS_QUEUE_URL'] = eventsUrl;
+  process.env['SQS_WAIT_TIME_SECONDS'] = '1';
 
   return { inputUrl, dlqUrl, eventsUrl };
 }

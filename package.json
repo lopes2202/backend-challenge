@@ -7,7 +7,9 @@
     "typecheck": "bun check",
     "start": "bun run src/main.ts",
     "dev": "bun --watch run src/main.ts",
-    "migration:run": "bun run src/main.ts --migrate-only"
+    "migration:run": "bun run src/main.ts --migrate-only",
+    "test:unit": "bun test test/unit",
+    "test:integration": "bun test test/integration"
   },
   "devDependencies": {
     "@types/bun": "^1.4.4",
